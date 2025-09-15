@@ -158,6 +158,10 @@ def get_context(context):
 
 		# check permissions
 		if frappe.form_dict.name:
+			# For profile web form, never keep docname in URL; redirect to clean route
+			if self.doc_type == "User" and self.route == "update-profile":
+				frappe.redirect(f"/{self.route}")
+				return
 			assert isinstance(frappe.form_dict.name, str | int)
 
 			if frappe.session.user == "Guest":
@@ -180,9 +184,11 @@ def get_context(context):
 				self.doc_type, "delete", frappe.form_dict.name
 			)
 
+		# For the User profile web form, keep a clean URL without docname
 		if frappe.local.path == self.route:
-			path = f"/{self.route}/list" if self.show_list else f"/{self.route}/new"
-			frappe.redirect(path)
+			if not (self.doc_type == "User" and self.route == "update-profile"):
+				path = f"/{self.route}/list" if self.show_list else f"/{self.route}/new"
+				frappe.redirect(path)
 
 		if frappe.form_dict.is_list and not self.show_list:
 			frappe.redirect(f"/{self.route}/new")
@@ -213,12 +219,19 @@ def get_context(context):
 			and not frappe.form_dict.name
 			and not frappe.form_dict.is_list
 		):
-			condition_json = json.loads(self.condition_json) if self.condition_json else []
-			condition_json.append(["owner", "=", frappe.session.user])
-			names = frappe.get_all(self.doc_type, filters=condition_json, pluck="name")
-			if names:
-				context.in_view_mode = True
-				frappe.redirect(f"/{self.route}/{names[0]}")
+			# Skip redirect for profile web form to avoid exposing email in URL
+			if not (self.doc_type == "User" and self.route == "update-profile"):
+				condition_json = json.loads(self.condition_json) if self.condition_json else []
+				condition_json.append(["owner", "=", frappe.session.user])
+				names = frappe.get_all(self.doc_type, filters=condition_json, pluck="name")
+				if names:
+					context.in_view_mode = True
+					frappe.redirect(f"/{self.route}/{names[0]}")
+
+		# Force edit mode for profile web form without leaking docname in path
+		if self.doc_type == "User" and self.route == "update-profile":
+			context.in_edit_mode = True
+			context.in_view_mode = False
 
 		# Show new form when
 		# - User is Guest
@@ -739,8 +752,13 @@ def get_form_data(doctype: str, docname: str | None = None, web_form_name: str |
 	out = frappe._dict()
 	out.web_form = web_form
 
+	# Avoid exposing PII in URLs; resolve current user's document server-side for User web form
 	if frappe.session.user != "Guest" and not docname and not web_form.allow_multiple:
-		docname = frappe.db.get_value(doctype, {"owner": frappe.session.user}, "name")
+		# For the User profile web form, always use the logged-in user as the docname
+		if doctype == "User":
+			docname = frappe.session.user
+		else:
+			docname = frappe.db.get_value(doctype, {"owner": frappe.session.user}, "name")
 
 	if docname:
 		doc = frappe.get_doc(doctype, docname)
