@@ -259,6 +259,7 @@ function get_build_options(files, outdir, plugins) {
 		metafile: true,
 		minify: PRODUCTION,
 		nodePaths: NODE_PATHS,
+		legalComments: "none",
 		define: {
 			"process.env.NODE_ENV": JSON.stringify(PRODUCTION ? "production" : "development"),
 			__VUE_OPTIONS_API__: JSON.stringify(true),
