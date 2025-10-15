@@ -32,6 +32,7 @@ frappe.ui.form.PrintView = class {
 	constructor(wrapper) {
 		this.wrapper = $(wrapper);
 		this.page = wrapper.page;
+		this.esign_button_added = false;
 		this.make();
 	}
 
@@ -69,6 +70,8 @@ frappe.ui.form.PrintView = class {
 		});
 
 		this.page.add_button(__("PDF"), () => this.render_pdf(), { icon: "small-file" });
+
+
 
 		this.page.add_button(__("Refresh"), () => this.refresh_print_format(), {
 			icon: "refresh",
@@ -182,6 +185,7 @@ frappe.ui.form.PrintView = class {
 		this.frm = frm;
 		this.set_title();
 		this.set_breadcrumbs();
+		this.add_esign_button_if_applicable();
 		this.setup_customize_dialog();
 
 		// print designer link
@@ -207,6 +211,33 @@ frappe.ui.form.PrintView = class {
 
 		this.setup_additional_settings();
 		return frappe.run_serially(tasks);
+	}
+
+	add_esign_button_if_applicable() {
+		if (this.esign_button_added) return;
+		if (this.frm && this.frm.doctype === "PCSO") {
+			let btn = this.page.add_button(
+				__("eSign"),
+				() => {
+					const url = "https://esigndashboard.cdac.in/asponboardingservice/login";
+					let w = window.open(url, "_blank");
+					if (!w) {
+						frappe.msgprint(__("Please enable pop-ups"));
+					}
+				}
+			);
+			// place next to the PDF button if possible
+			try {
+				let actions = this.page.custom_actions;
+				let pdfBtn = actions.find(".btn:contains('PDF')").last();
+				if (pdfBtn && pdfBtn.length) {
+					btn.insertAfter(pdfBtn);
+				}
+			} catch (e) {
+				// ignore DOM placement issues
+			}
+			this.esign_button_added = true;
+		}
 	}
 
 	set_breadcrumbs() {
