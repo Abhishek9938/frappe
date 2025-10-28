@@ -219,7 +219,7 @@ frappe.ui.form.PrintView = class {
 			let btn = this.page.add_button(
 				__("eSign"),
 				() => {
-					const url = "https://uatjutesmart.jutecomm.gov.in/SpringBootESign/";
+					const url = "/SpringBootESign/";
 					let w = window.open(url, "_blank");
 					if (!w) {
 						frappe.msgprint(__("Please enable pop-ups"));
