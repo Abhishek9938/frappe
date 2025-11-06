@@ -215,7 +215,7 @@ frappe.ui.form.PrintView = class {
 
 	add_esign_button_if_applicable() {
 		if (this.esign_button_added) return;
-		if (this.frm && this.frm.doctype === "PCSO") {
+		if (this.frm && (this.frm.doctype === "PCSO" || this.frm.doctype === "Registration For Jute Mill") {
 			let btn = this.page.add_button(
 				__("eSign"),
 				() => {
