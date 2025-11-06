@@ -368,9 +368,8 @@ def export_query():
 
 		frappe.msgprint(
 			_(
-				"Your report is being generated in the background. "
-				f"You will receive an email on {user_email} with a download link once it is ready."
-			)
+				"Your report is being generated in the background. You will receive an email on {0} with a download link once it is ready."
+			).format(user_email)
 		)
 		return
 
@@ -457,7 +456,7 @@ def _export_query(form_params, csv_params, populate_response=True):
 	if not populate_response:
 		return title, file_extension, content
 
-	provide_binary_file(title, file_extension, content)
+	provide_binary_file(_(title), file_extension, content)
 
 
 def append_totals_row(data):
@@ -522,7 +521,7 @@ def get_field_info(fields, doctype):
 			if parenttype != doctype:
 				# If the column is from a child table, append the child doctype.
 				# For example, "Item Code (Sales Invoice Item)".
-				label += f" ({ _(parenttype) })"
+				label += f" ({_(parenttype)})"
 
 		field_info.append(
 			{"name": name, "label": label, "fieldtype": fieldtype, "translatable": translatable}
@@ -707,7 +706,7 @@ def get_filter_dashboard_data(stats, doctype, filters=None):
 			tagcount = frappe.get_list(
 				doctype,
 				fields=[tag["name"], "count(*)"],
-				filters=[*filters, "ifnull(`%s`,'')!=''" % tag["name"]],
+				filters=[*filters, "ifnull(`{}`,'')!=''".format(tag["name"])],
 				group_by=tag["name"],
 				as_list=True,
 			)
