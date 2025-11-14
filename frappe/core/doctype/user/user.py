@@ -867,38 +867,38 @@ def update_password(
 		return redirect_url or get_default_path() or get_home_page()
 
 
-# @frappe.whitelist(allow_guest=True)
-# def test_password_strength(new_password: str, key=None, old_password=None, user_data: tuple | None = None):
-# 	from frappe.utils.deprecations import deprecation_warning
-# 	from frappe.utils.password_strength import test_password_strength as _test_password_strength
+@frappe.whitelist(allow_guest=True)
+def test_password_strength(new_password: str, key=None, old_password=None, user_data: tuple | None = None):
+	from frappe.utils.deprecations import deprecation_warning
+	from frappe.utils.password_strength import test_password_strength as _test_password_strength
 
-# 	if key is not None or old_password is not None:
-# 		deprecation_warning(
-# 			"Arguments `key` and `old_password` are deprecated in function `test_password_strength`."
-# 		)
+	if key is not None or old_password is not None:
+		deprecation_warning(
+			"Arguments `key` and `old_password` are deprecated in function `test_password_strength`."
+		)
 
-# 	enable_password_policy = frappe.get_system_settings("enable_password_policy") or 0
+	enable_password_policy = frappe.get_system_settings("enable_password_policy") or 0
 
-# 	if not enable_password_policy:
-# 		return {}
+	if not enable_password_policy:
+		return {}
 
-# 	if not user_data:
-# 		user_data = frappe.db.get_value(
-# 			"User", frappe.session.user, ["first_name", "middle_name", "last_name", "email", "birth_date"]
-# 		)
+	if not user_data:
+		user_data = frappe.db.get_value(
+			"User", frappe.session.user, ["first_name", "middle_name", "last_name", "email", "birth_date"]
+		)
 
-# 	if new_password:
-# 		result = _test_password_strength(new_password, user_inputs=user_data)
-# 		password_policy_validation_passed = False
-# 		minimum_password_score = cint(frappe.get_system_settings("minimum_password_score")) or 0
+	if new_password:
+		result = _test_password_strength(new_password, user_inputs=user_data)
+		password_policy_validation_passed = False
+		minimum_password_score = cint(frappe.get_system_settings("minimum_password_score")) or 0
 
-# 		# score should be greater than 0 and minimum_password_score
-# 		if result.get("score") and result.get("score") >= minimum_password_score:
-# 			password_policy_validation_passed = True
+		# score should be greater than 0 and minimum_password_score
+		if result.get("score") and result.get("score") >= minimum_password_score:
+			password_policy_validation_passed = True
 
-# 		result["feedback"]["password_policy_validation_passed"] = password_policy_validation_passed
-# 		result.pop("password", None)
-# 		return result
+		result["feedback"]["password_policy_validation_passed"] = password_policy_validation_passed
+		result.pop("password", None)
+		return result
 
 
 @frappe.whitelist()
