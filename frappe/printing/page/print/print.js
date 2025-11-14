@@ -215,15 +215,119 @@ frappe.ui.form.PrintView = class {
 
 	add_esign_button_if_applicable() {
 		if (this.esign_button_added) return;
-		if (this.frm && (this.frm.doctype === "PCSO" || this.frm.doctype === "Registration For Jute Mill")) {
+		// Only show eSign button for Draft documents (docstatus === 0)
+		if (this.frm && (this.frm.doctype === "PCSO" || this.frm.doctype === "Registration For Jute Mill") && this.frm.doc.docstatus === 0) {
 			let btn = this.page.add_button(
 				__("eSign"),
 				() => {
-					const url = "/SpringBootESign/";
-					let w = window.open(url, "_blank");
-					if (!w) {
-						frappe.msgprint(__("Please enable pop-ups"));
-					}
+					frappe.show_alert({ message: __("Preparing PDF for eSign..."), indicator: "blue" });
+					console.log("Calling eSign API with:", {
+						doctype: this.frm.doc.doctype,
+						name: this.frm.doc.name,
+						print_format: this.selected_format(),
+						no_letterhead: this.with_letterhead() ? 0 : 1,
+						letterhead: this.get_letterhead(),
+						auth_type: "OTP"
+					});
+					
+					// Store doctype and name for later use
+					const doctype = this.frm.doc.doctype;
+					const docname = this.frm.doc.name;
+					
+					frappe
+						.xcall("dev_jute_smart.api.esign.upload_pcso_pdf_to_esign", {
+							doctype: doctype,
+							name: docname,
+							print_format: this.selected_format(),
+							no_letterhead: this.with_letterhead() ? 0 : 1,
+							letterhead: this.get_letterhead(),
+							settings: this.additional_settings || {},
+							auth_type: "OTP", // change if needed
+						})
+						.then((r) => {
+							console.log("eSign API response:", r);
+							if (r && r.status === "error") {
+								// Show detailed error message
+								let errorMsg = r.message || __("Upload failed");
+								if (r.details) {
+									if (typeof r.details === "string") {
+										errorMsg += "\n\n" + r.details;
+									} else if (r.details.error) {
+										errorMsg += "\n\n" + __("Error: {0}", [r.details.error]);
+									} else if (r.details.status_code) {
+										errorMsg += "\n\n" + __("HTTP Status: {0}", [r.details.status_code]);
+										if (r.details.response_text) {
+											errorMsg += "\n" + __("Response: {0}", [r.details.response_text.substring(0, 200)]);
+										}
+									} else {
+										errorMsg += "\n\n" + JSON.stringify(r.details, null, 2);
+									}
+								}
+								frappe.msgprint({
+									title: __("eSign Upload Failed"),
+									message: errorMsg,
+									indicator: "red"
+								});
+								return;
+							}
+							
+							let esignWindow = null;
+							
+							if (r && r.html) {
+								// Create a blob URL for the HTML content to ensure proper rendering
+								const blob = new Blob([r.html], { type: 'text/html;charset=utf-8' });
+								const url = URL.createObjectURL(blob);
+								esignWindow = window.open(url, "esign_window", "width=900,height=600");
+								if (!esignWindow) {
+									frappe.msgprint(__("Please enable pop-ups for this site"));
+									return;
+								}
+								// Clean up the blob URL after a delay
+								setTimeout(() => URL.revokeObjectURL(url), 1000);
+								frappe.show_alert({ message: r.message || __("Sent to eSign - Complete the process in the popup window"), indicator: "green" });
+							} else if (r && r.redirect_url) {
+								esignWindow = window.open(r.redirect_url, "esign_window", "width=900,height=600");
+								if (!esignWindow) {
+									frappe.msgprint(__("Please enable pop-ups for this site"));
+									return;
+								}
+								frappe.show_alert({ message: r.message || __("Sent to eSign - Complete the process in the popup window"), indicator: "green" });
+							} else {
+								frappe.msgprint(__("Uploaded to eSign, but no redirect URL was provided."));
+								return;
+							}
+							
+							// Monitor the popup window to detect when eSign completes
+							if (esignWindow) {
+								this.monitor_esign_popup(esignWindow, doctype, docname);
+							}
+						})
+						.catch((e) => {
+							let details = "";
+							try {
+								// Try to extract frappe server messages if any
+								if (e && e._server_messages) {
+									let msgs = JSON.parse(e._server_messages);
+									details = msgs.map((m) => JSON.parse(m).message || m).join("\n");
+								} else if (e && e.message) {
+									details = e.message;
+								} else if (e && e.exc) {
+									details = e.exc;
+								}
+								// Also check for response data
+								if (e && e.responseJSON && e.responseJSON.message) {
+									details = e.responseJSON.message;
+								}
+							} catch (err) {
+								// ignore parse errors
+							}
+							console.error("eSign upload error:", e);
+							frappe.msgprint({
+								title: __("eSign Upload Failed"),
+								message: __("Failed to upload to eSign service.") + (details ? "\n\n" + __("Details: {0}", [details]) : "\n\n" + __("Please check the browser console for more details.")),
+								indicator: "red"
+							});
+						});
 				}
 			);
 			// place next to the PDF button if possible
@@ -238,6 +342,577 @@ frappe.ui.form.PrintView = class {
 			}
 			this.esign_button_added = true;
 		}
+	}
+
+	try_fetch_pdf_on_close(doctype, docname) {
+		// When user manually closes, try to fetch PDF
+		frappe.show_alert({ 
+			message: __("Checking for signed PDF..."), 
+			indicator: "blue" 
+		});
+		
+		setTimeout(() => {
+			frappe.xcall("dev_jute_smart.api.esign.fetch_and_attach_signed_pdf", {
+				doctype: doctype,
+				name: docname
+			})
+			.then((result) => {
+				if (result && result.status === "ok") {
+					frappe.show_alert({ 
+						message: __("Signed PDF attached successfully! Submitting form..."), 
+						indicator: "green" 
+					});
+					
+					// Navigate to the document form and submit it
+					frappe.set_route("Form", doctype, docname).then(() => {
+						// Wait for form to load
+						setTimeout(() => {
+							if (cur_frm && cur_frm.doc && cur_frm.doc.name === docname) {
+								// Reload to get the attached PDF
+								cur_frm.reload_doc().then(() => {
+									// Submit the form
+									console.log("Attempting to submit form after eSign...");
+									cur_frm.save('Submit').then(() => {
+										frappe.show_alert({ 
+											message: __("Form submitted successfully!"), 
+											indicator: "green" 
+										});
+										console.log("Form submitted successfully after eSign");
+									}).catch((err) => {
+										console.error("Failed to submit form:", err);
+										frappe.msgprint({
+											title: __("Form Submission Failed"),
+											message: __("PDF was attached successfully, but form submission failed. Please submit manually."),
+											indicator: "orange"
+										});
+									});
+								});
+							}
+						}, 1000);
+					});
+				} else {
+					frappe.msgprint({
+						title: __("PDF Not Ready"),
+						message: __("The signed PDF is not yet available. It will be attached automatically when ready."),
+						indicator: "orange"
+					});
+				}
+			})
+			.catch(() => {
+				frappe.msgprint({
+					title: __("PDF Not Found"),
+					message: __("Could not find the signed PDF. Please ensure the eSign process is complete."),
+					indicator: "orange"
+				});
+			});
+		}, 1000);
+	}
+
+	monitor_esign_iframe(iframe, dialog, doctype, docname) {
+		// Monitor the iframe to detect when eSign completes
+		let check_interval = null;
+		let timeout = null;
+		let fetch_attempted = false;
+		let poll_count = 0;
+		let was_cross_origin = false;
+		let pdf_check_attempts = 0;
+		const max_polls = 600; // 600 polls * 1 second = 10 minutes
+		
+		// Store session info in localStorage for callback page
+		try {
+			localStorage.setItem('esign_doctype', doctype);
+			localStorage.setItem('esign_docname', docname);
+			localStorage.setItem('esign_timestamp', Date.now().toString());
+		} catch (e) {
+			console.log('Could not store session info in localStorage:', e);
+		}
+		
+		const cleanup = () => {
+			if (check_interval) clearInterval(check_interval);
+			if (timeout) clearTimeout(timeout);
+			try {
+				localStorage.removeItem('esign_doctype');
+				localStorage.removeItem('esign_docname');
+				localStorage.removeItem('esign_timestamp');
+			} catch (e) {
+				// Ignore localStorage errors
+			}
+		};
+		
+		const close_dialog = () => {
+			console.log("Attempting to close dialog...");
+			try {
+				if (dialog && dialog.$wrapper && dialog.$wrapper.is(':visible')) {
+					// Show completion message in dialog
+					try {
+						const iframe_container = dialog.fields_dict.esign_iframe_container.$wrapper;
+						iframe_container.html(`
+							<div style="display:flex;align-items:center;justify-content:center;height:70vh;background:rgba(0,0,0,0.05);">
+								<div style="text-align:center;padding:40px;background:white;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+									<div style="font-size:64px;color:#10b981;margin-bottom:20px;">✓</div>
+									<h2 style="color:#1f2937;margin-bottom:10px;">eSign Complete!</h2>
+									<p style="color:#6b7280;font-size:16px;">Fetching your signed PDF...</p>
+								</div>
+							</div>
+						`);
+						console.log("Completion message injected successfully");
+					} catch (e) {
+						console.log("Could not inject completion message:", e);
+					}
+					
+					// Close dialog after brief delay
+					setTimeout(() => {
+						try {
+							dialog.hide();
+							console.log("Dialog closed successfully");
+						} catch (e) {
+							console.log("Could not close dialog:", e);
+						}
+					}, 1500);
+				}
+			} catch (e) {
+				console.log("Error in close_dialog:", e);
+			}
+		};
+		
+		const fetch_and_attach_pdf = () => {
+			if (fetch_attempted) return;
+			fetch_attempted = true;
+			
+			console.log("fetching signed PDF...");
+			frappe.show_alert({ 
+				message: __("Fetching signed PDF..."), 
+				indicator: "blue" 
+			});
+			
+			// Close the dialog first
+			close_dialog();
+			
+			// Give CDAC service a moment to finalize the PDF
+			setTimeout(() => {
+				frappe.xcall("dev_jute_smart.api.esign.fetch_and_attach_signed_pdf", {
+					doctype: doctype,
+					name: docname
+				})
+				.then((result) => {
+					console.log("PDF attachment result:", result);
+					if (result && result.status === "ok") {
+						frappe.show_alert({ 
+							message: __("Signed PDF attached successfully!"), 
+							indicator: "green" 
+						});
+						
+						// Make sure dialog is closed
+						try {
+							if (dialog && dialog.$wrapper && dialog.$wrapper.is(':visible')) {
+								dialog.hide();
+							}
+						} catch (e) {
+							console.log("Could not close dialog:", e);
+						}
+						
+						// Reload the document to show the attachment
+						if (this.frm) {
+							this.frm.reload_doc();
+						}
+						
+						// Navigate to the eSign Attachment Form tab
+						setTimeout(() => {
+							frappe.set_route("Form", doctype, docname);
+						}, 500);
+					} else {
+						frappe.msgprint({
+							title: __("PDF Attachment Failed"),
+							message: result.message || __("Failed to attach signed PDF."),
+							indicator: "orange"
+						});
+					}
+					cleanup();
+				})
+				.catch((err) => {
+					console.error("Failed to fetch and attach PDF:", err);
+					frappe.msgprint({
+						title: __("PDF Attachment Failed"),
+						message: __("Could not fetch signed PDF from CDAC service. Please close the dialog manually after signing is complete."),
+						indicator: "orange"
+					});
+					cleanup();
+				});
+			}, 2000); // Wait 2 seconds for PDF to be ready
+		};
+		
+		// Check iframe status every 1 second for faster detection
+		check_interval = setInterval(() => {
+			poll_count++;
+			console.log(`eSign iframe monitoring poll #${poll_count}`);
+			
+			try {
+				// Try to check if we can access the iframe location (same-origin)
+				let can_access_location = false;
+				let iframe_url = "";
+				
+				try {
+					iframe_url = iframe.contentWindow.location.href;
+					can_access_location = true;
+					console.log(`Can access iframe URL: ${iframe_url}`);
+					
+					// If we can read the URL and it's the finalResponse page
+					if (iframe_url.includes("finalResponse") || iframe_url.includes("SpringBootESign")) {
+						console.log("Detected finalResponse page in iframe!");
+						fetch_and_attach_pdf();
+						return;
+					}
+					
+					// If we were cross-origin before and now we can access it, 
+					// it means we're back on localhost - likely completed
+					if (was_cross_origin && iframe_url.includes("localhost")) {
+						console.log("Returned from cross-origin to localhost - likely completed!");
+						fetch_and_attach_pdf();
+						return;
+					}
+					
+					was_cross_origin = false;
+				} catch (e) {
+					// Cross-origin error - iframe is on CDAC domain
+					was_cross_origin = true;
+					console.log(`Poll #${poll_count}: Iframe is cross-origin (on CDAC domain)`);
+				}
+				
+				// After 10 seconds, start proactively checking if PDF is available
+				if (poll_count >= 10 && poll_count % 3 === 0 && pdf_check_attempts < 10) {
+					pdf_check_attempts++;
+					console.log(`Proactive PDF availability check #${pdf_check_attempts}...`);
+					
+					// Silently check if PDF is available by trying to fetch it
+					frappe.xcall("dev_jute_smart.api.esign.fetch_and_attach_signed_pdf", {
+						doctype: doctype,
+						name: docname
+					})
+					.then((result) => {
+						if (result && result.status === "ok") {
+							console.log("PDF is available! Auto-closing dialog and completing...");
+							fetch_and_attach_pdf();
+						} else {
+							console.log("PDF not ready yet, will keep monitoring...");
+						}
+					})
+					.catch(() => {
+						console.log("PDF not ready yet, will keep monitoring...");
+					});
+				}
+				
+				// Show a reminder message after 2 minutes
+				if (poll_count === 120) {
+					frappe.show_alert({ 
+						message: __("Still waiting for eSign to complete..."), 
+						indicator: "blue" 
+					});
+				}
+			} catch (e) {
+				console.log('Error in iframe monitoring:', e);
+			}
+		}, 1000); // Check every 1 second for faster detection
+		
+		// Set a timeout of 10 minutes
+		timeout = setTimeout(() => {
+			console.log("eSign monitoring timed out after 10 minutes");
+			cleanup();
+			if (!fetch_attempted) {
+				frappe.msgprint({
+					title: __("eSign Timeout"),
+					message: __("The eSign process is taking longer than expected. Please complete the signing and close the dialog."),
+					indicator: "orange"
+				});
+			}
+		}, 600000); // 10 minutes
+		
+		// Listen for messages from the iframe (in case it redirects to our callback page)
+		const messageHandler = (event) => {
+			// Security check - only accept messages from localhost
+			if (!event.origin.includes('localhost')) {
+				return;
+			}
+			
+			if (event.data && event.data.type === 'esign_complete') {
+				console.log('Received eSign complete message from iframe:', event.data);
+				if (event.data.doctype === doctype && event.data.docname === docname) {
+					fetch_and_attach_pdf();
+				}
+			}
+		};
+		window.addEventListener('message', messageHandler);
+		
+		// Store cleanup function that also removes message listener
+		this.esign_monitor_cleanup = () => {
+			cleanup();
+			window.removeEventListener('message', messageHandler);
+		};
+	}
+
+	monitor_esign_popup(popup_window, doctype, docname) {
+		// Monitor the popup window and poll CDAC service to detect when eSign completes
+		let check_interval = null;
+		let timeout = null;
+		let fetch_attempted = false;
+		let poll_count = 0;
+		let was_cross_origin = false;
+		let pdf_check_attempts = 0;
+		const max_polls = 600; // 600 polls * 1 second = 10 minutes
+		
+		// Store session info in localStorage for callback page
+		try {
+			localStorage.setItem('esign_doctype', doctype);
+			localStorage.setItem('esign_docname', docname);
+			localStorage.setItem('esign_timestamp', Date.now().toString());
+		} catch (e) {
+			console.log('Could not store session info in localStorage:', e);
+		}
+		
+		const cleanup = () => {
+			if (check_interval) clearInterval(check_interval);
+			if (timeout) clearTimeout(timeout);
+			try {
+				localStorage.removeItem('esign_doctype');
+				localStorage.removeItem('esign_docname');
+				localStorage.removeItem('esign_timestamp');
+			} catch (e) {
+				// Ignore localStorage errors
+			}
+		};
+		
+		const try_close_popup = () => {
+			console.log("Attempting to close popup...");
+			try {
+				if (popup_window && !popup_window.closed) {
+					// Try to inject overlay message
+					try {
+						const popup_doc = popup_window.document;
+						if (popup_doc && popup_doc.body) {
+							const overlay = popup_doc.createElement('div');
+							overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);color:white;display:flex;align-items:center;justify-content:center;font-size:24px;z-index:99999;';
+							overlay.innerHTML = '<div style="text-align:center;"><div style="font-size:48px;margin-bottom:20px;">✓</div>eSign Complete!<br/><small style="font-size:16px;margin-top:10px;display:block;">Closing window and fetching your signed PDF...</small></div>';
+							popup_doc.body.appendChild(overlay);
+							console.log("Overlay message injected successfully");
+						}
+					} catch (e) {
+						console.log("Could not inject overlay (likely cross-origin):", e.message);
+					}
+					
+					// Close popup after brief delay
+					setTimeout(() => {
+						try {
+							if (popup_window && !popup_window.closed) {
+								popup_window.close();
+								console.log("Popup closed successfully");
+							}
+						} catch (e) {
+							console.log("Could not close popup:", e);
+						}
+					}, 800);
+				}
+			} catch (e) {
+				console.log("Error in try_close_popup:", e);
+			}
+		};
+		
+		const fetch_and_attach_pdf = () => {
+			if (fetch_attempted) return;
+			fetch_attempted = true;
+			
+			console.log("fetching signed PDF...");
+			frappe.show_alert({ 
+				message: __("Fetching signed PDF..."), 
+				indicator: "blue" 
+			});
+			
+			// Close the popup first
+			try_close_popup();
+			
+			// Give CDAC service a moment to finalize the PDF
+			setTimeout(() => {
+				frappe.xcall("dev_jute_smart.api.esign.fetch_and_attach_signed_pdf", {
+					doctype: doctype,
+					name: docname
+				})
+				.then((result) => {
+					console.log("PDF attachment result:", result);
+					if (result && result.status === "ok") {
+						frappe.show_alert({ 
+							message: __("Signed PDF attached successfully! Submitting form..."), 
+							indicator: "green" 
+						});
+						
+						// Make sure popup is closed
+						try {
+							if (popup_window && !popup_window.closed) {
+								popup_window.close();
+							}
+						} catch (e) {
+							console.log("Could not close popup:", e);
+						}
+						
+						// Navigate to the document form and submit it
+						frappe.set_route("Form", doctype, docname).then(() => {
+							// Wait for form to load
+							setTimeout(() => {
+								if (cur_frm && cur_frm.doc && cur_frm.doc.name === docname) {
+									// Reload to get the attached PDF
+									cur_frm.reload_doc().then(() => {
+										// Submit the form
+										console.log("Attempting to submit form after eSign...");
+										cur_frm.save('Submit').then(() => {
+											frappe.show_alert({ 
+												message: __("Form submitted successfully!"), 
+												indicator: "green" 
+											});
+											console.log("Form submitted successfully after eSign");
+										}).catch((err) => {
+											console.error("Failed to submit form:", err);
+											frappe.msgprint({
+												title: __("Form Submission Failed"),
+												message: __("PDF was attached successfully, but form submission failed. Please submit manually."),
+												indicator: "orange"
+											});
+										});
+									});
+								}
+							}, 1000);
+						});
+					} else {
+						frappe.msgprint({
+							title: __("PDF Attachment Failed"),
+							message: result.message || __("Failed to attach signed PDF."),
+							indicator: "orange"
+						});
+					}
+					cleanup();
+				})
+				.catch((err) => {
+					console.error("Failed to fetch and attach PDF:", err);
+					frappe.msgprint({
+						title: __("PDF Attachment Failed"),
+						message: __("Could not fetch signed PDF from CDAC service. Please close the popup manually after signing is complete."),
+						indicator: "orange"
+					});
+					cleanup();
+				});
+			}, 2000); // Wait 2 seconds for PDF to be ready
+		};
+		
+		// Check popup window status and poll CDAC service every 2 seconds for faster detection
+		check_interval = setInterval(() => {
+			poll_count++;
+			console.log(`eSign monitoring poll #${poll_count}`);
+			
+			try {
+				// Check if popup is closed by user
+				if (popup_window && popup_window.closed) {
+					console.log("eSign popup closed by user - checking if PDF is ready");
+					fetch_and_attach_pdf();
+					return;
+				}
+				
+				// Try to check if we can access the popup location (same-origin)
+				let can_access_location = false;
+				let popup_url = "";
+				
+				try {
+					popup_url = popup_window.location.href;
+					can_access_location = true;
+					console.log(`Can access popup URL: ${popup_url}`);
+					
+					// If we can read the URL and it's the finalResponse page
+					if (popup_url.includes("finalResponse") || popup_url.includes("SpringBootESign")) {
+						console.log("Detected finalResponse page!");
+						fetch_and_attach_pdf();
+						return;
+					}
+					
+					// If we were cross-origin before and now we can access it, 
+					// it means we're back on localhost - likely completed
+					if (was_cross_origin && popup_url.includes("localhost")) {
+						console.log("Returned from cross-origin to localhost - likely completed!");
+						fetch_and_attach_pdf();
+						return;
+					}
+					
+					was_cross_origin = false;
+				} catch (e) {
+					// Cross-origin error - popup is on CDAC domain
+					was_cross_origin = true;
+					console.log(`Poll #${poll_count}: Popup is cross-origin (on CDAC domain)`);
+				}
+				
+				// After 10 seconds, start proactively checking if PDF is available
+				// This is a fallback in case we can't detect the URL change
+				if (poll_count >= 10 && poll_count % 3 === 0 && pdf_check_attempts < 10) {
+					pdf_check_attempts++;
+					console.log(`Proactive PDF availability check #${pdf_check_attempts}...`);
+					
+					// Silently check if PDF is available by trying to fetch it
+					frappe.xcall("dev_jute_smart.api.esign.fetch_and_attach_signed_pdf", {
+						doctype: doctype,
+						name: docname
+					})
+					.then((result) => {
+						if (result && result.status === "ok") {
+							console.log("PDF is available! Auto-closing popup and completing...");
+							fetch_and_attach_pdf();
+						} else {
+							console.log("PDF not ready yet, will keep monitoring...");
+						}
+					})
+					.catch(() => {
+						console.log("PDF not ready yet, will keep monitoring...");
+					});
+				}
+				
+				// Show a reminder message after 2 minutes (120 polls at 1 second each)
+				if (poll_count === 120) {
+					frappe.show_alert({ 
+						message: __("Still waiting for eSign to complete..."), 
+						indicator: "blue" 
+					});
+				}
+			} catch (e) {
+				console.log('Error in popup monitoring:', e);
+			}
+		}, 1000); // Check every 1 second for faster detection
+		
+		// Set a timeout of 10 minutes
+		timeout = setTimeout(() => {
+			console.log("eSign monitoring timed out after 10 minutes");
+			cleanup();
+			if (!fetch_attempted && popup_window && !popup_window.closed) {
+				frappe.msgprint({
+					title: __("eSign Timeout"),
+					message: __("The eSign process is taking longer than expected. Please complete the signing and then use the 'Fetch Signed PDF' button on the document."),
+					indicator: "orange"
+				});
+			}
+		}, 600000); // 10 minutes
+		
+		// Listen for messages from the popup (in case it redirects to our callback page)
+		const messageHandler = (event) => {
+			// Security check - only accept messages from localhost
+			if (!event.origin.includes('localhost')) {
+				return;
+			}
+			
+			if (event.data && event.data.type === 'esign_complete') {
+				console.log('Received eSign complete message from popup:', event.data);
+				if (event.data.doctype === doctype && event.data.docname === docname) {
+					fetch_and_attach_pdf();
+				}
+			}
+		};
+		window.addEventListener('message', messageHandler);
+		
+		// Store cleanup function that also removes message listener
+		this.esign_monitor_cleanup = () => {
+			cleanup();
+			window.removeEventListener('message', messageHandler);
+		};
 	}
 
 	set_breadcrumbs() {
@@ -895,3 +1570,4 @@ frappe.ui.form.PrintView = class {
 		});
 	}
 };
+
