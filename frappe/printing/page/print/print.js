@@ -364,32 +364,32 @@ frappe.ui.form.PrintView = class {
 					});
 					
 					// Navigate to the document form and submit it
-					frappe.set_route("Form", doctype, docname).then(() => {
-						// Wait for form to load
-						setTimeout(() => {
-							if (cur_frm && cur_frm.doc && cur_frm.doc.name === docname) {
-								// Reload to get the attached PDF
-								cur_frm.reload_doc().then(() => {
-									// Submit the form
-									console.log("Attempting to submit form after eSign...");
-									cur_frm.save('Submit').then(() => {
-										frappe.show_alert({ 
-											message: __("Form submitted successfully!"), 
-											indicator: "green" 
-										});
-										console.log("Form submitted successfully after eSign");
-									}).catch((err) => {
-										console.error("Failed to submit form:", err);
-										frappe.msgprint({
-											title: __("Form Submission Failed"),
-											message: __("PDF was attached successfully, but form submission failed. Please submit manually."),
-											indicator: "orange"
-										});
-									});
-								});
-							}
-						}, 1000);
-					});
+					// frappe.set_route("Form", doctype, docname).then(() => {
+					// 	// Wait for form to load
+					// 	setTimeout(() => {
+					// 		if (cur_frm && cur_frm.doc && cur_frm.doc.name === docname) {
+					// 			// Reload to get the attached PDF
+					// 			cur_frm.reload_doc().then(() => {
+					// 				// Submit the form
+					// 				console.log("Attempting to submit form after eSign...");
+					// 				cur_frm.save('Submit').then(() => {
+					// 					frappe.show_alert({ 
+					// 						message: __("Form submitted successfully!"), 
+					// 						indicator: "green" 
+					// 					});
+					// 					console.log("Form submitted successfully after eSign");
+					// 				}).catch((err) => {
+					// 					console.error("Failed to submit form:", err);
+					// 					frappe.msgprint({
+					// 						title: __("Form Submission Failed"),
+					// 						message: __("PDF was attached successfully, but form submission failed. Please submit manually."),
+					// 						indicator: "orange"
+					// 					});
+					// 				});
+					// 			});
+					// 		}
+					// 	}, 1000);
+					// });
 				} else {
 					frappe.msgprint({
 						title: __("PDF Not Ready"),
@@ -756,25 +756,29 @@ frappe.ui.form.PrintView = class {
 							// Wait for form to load
 							setTimeout(() => {
 								if (cur_frm && cur_frm.doc && cur_frm.doc.name === docname) {
-									// Reload to get the attached PDF
-									cur_frm.reload_doc().then(() => {
-										// Submit the form
-										console.log("Attempting to submit form after eSign...");
-										cur_frm.save('Submit').then(() => {
-											frappe.show_alert({ 
+												frappe.show_alert({ 
 												message: __("Form submitted successfully!"), 
 												indicator: "green" 
 											});
-											console.log("Form submitted successfully after eSign");
-										}).catch((err) => {
-											console.error("Failed to submit form:", err);
-											frappe.msgprint({
-												title: __("Form Submission Failed"),
-												message: __("PDF was attached successfully, but form submission failed. Please submit manually."),
-												indicator: "orange"
-											});
-										});
-									});
+									// Reload to get the attached PDF
+									// cur_frm.reload_doc().then(() => {
+									// 	// Submit the form
+									// 	console.log("Attempting to submit form after eSign...");
+									// 	cur_frm.save('Submit').then(() => {
+									// 		frappe.show_alert({ 
+									// 			message: __("Form submitted successfully!"), 
+									// 			indicator: "green" 
+									// 		});
+									// 		console.log("Form submitted successfully after eSign");
+									// 	}).catch((err) => {
+									// 		console.error("Failed to submit form:", err);
+									// 		frappe.msgprint({
+									// 			title: __("Form Submission Failed"),
+									// 			message: __("PDF was attached successfully, but form submission failed. Please submit manually."),
+									// 			indicator: "orange"
+									// 		});
+									// 	});
+									// });
 								}
 							}, 1000);
 						});
@@ -1570,4 +1574,6 @@ frappe.ui.form.PrintView = class {
 		});
 	}
 };
+
+
 
