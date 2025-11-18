@@ -369,7 +369,8 @@ frappe.ui.form.PrintView = class {
 					// 	setTimeout(() => {
 					// 		if (cur_frm && cur_frm.doc && cur_frm.doc.name === docname) {
 					// 			// Reload to get the attached PDF
-					// 			cur_frm.reload_doc().then(() => {
+								cur_frm.reload_doc()
+					// .then(() => {
 					// 				// Submit the form
 					// 				console.log("Attempting to submit form after eSign...");
 					// 				cur_frm.save('Submit').then(() => {
@@ -761,7 +762,8 @@ frappe.ui.form.PrintView = class {
 												indicator: "green" 
 											});
 									// Reload to get the attached PDF
-									// cur_frm.reload_doc().then(() => {
+									cur_frm.reload_doc()
+									// .then(() => {
 									// 	// Submit the form
 									// 	console.log("Attempting to submit form after eSign...");
 									// 	cur_frm.save('Submit').then(() => {
