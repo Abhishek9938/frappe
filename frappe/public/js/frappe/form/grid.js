@@ -157,9 +157,13 @@ export default class Grid {
 				d.idx = ri + 1;
 			}
 			if (d.name === undefined) {
-				d.name = "row " + d.idx;
+				d.name = this.get_random_name();
 			}
 		});
+	}
+
+	get_random_name() {
+		return Math.random().toString(36).slice(2, 10);
 	}
 
 	set_doc_url() {
@@ -483,7 +487,7 @@ export default class Grid {
 				d.idx = ri + 1;
 			}
 			if (d.name === undefined) {
-				d.name = "row " + d.idx;
+				d.name = this.get_random_name();
 			}
 			let grid_row;
 			if (this.grid_rows[ri] && !append_row) {
@@ -818,7 +822,8 @@ export default class Grid {
 	}
 
 	add_new_row(idx, callback, show, copy_doc, go_to_last_page = false, go_to_first_page = false) {
-		if (this.is_editable()) {
+		let cannot_add_rows = this.cannot_add_rows || (this.df && this.df.cannot_add_rows);
+		if (this.is_editable() && !cannot_add_rows) {
 			if (go_to_last_page) {
 				this.grid_pagination.go_to_last_page_to_add_row();
 			} else if (go_to_first_page) {
