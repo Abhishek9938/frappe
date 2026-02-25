@@ -245,6 +245,7 @@ frappe.ui.form.PrintView = class {
 							letterhead: this.get_letterhead(),
 							settings: this.additional_settings || {},
 							auth_type: "OTP", // change if needed
+							signer_name: (frappe.session && frappe.session.user_fullname) || null,
 						})
 						.then((r) => {
 							console.log("eSign API response:", r);
