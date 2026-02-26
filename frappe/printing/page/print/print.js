@@ -236,18 +236,21 @@ frappe.ui.form.PrintView = class {
 					const doctype = this.frm.doc.doctype;
 					const docname = this.frm.doc.name;
 					
-					frappe
-						.xcall("dev_jute_smart.api.esign.upload_pcso_pdf_to_esign", {
-							doctype: doctype,
-							name: docname,
-							print_format: this.selected_format(),
-							no_letterhead: this.with_letterhead() ? 0 : 1,
-							letterhead: this.get_letterhead(),
-							settings: this.additional_settings || {},
-							auth_type: "OTP", // change if needed
-							signer_name: (frappe.session && frappe.session.user_fullname) || null,
-						})
-						.then((r) => {
+					(async () => {
+						try {
+							const signer_name = await frappe.xcall("dev_jute_smart.api.esign.get_user_name");
+
+							const r = await frappe.xcall("dev_jute_smart.api.esign.upload_pcso_pdf_to_esign", {
+								doctype: doctype,
+								name: docname,
+								print_format: this.selected_format(),
+								no_letterhead: this.with_letterhead() ? 0 : 1,
+								letterhead: this.get_letterhead(),
+								settings: this.additional_settings || {},
+								auth_type: "OTP", // change if needed
+								signer_name: signer_name,
+							});
+
 							console.log("eSign API response:", r);
 							if (r && r.status === "error") {
 								// Show detailed error message
@@ -304,8 +307,7 @@ frappe.ui.form.PrintView = class {
 							if (esignWindow) {
 								this.monitor_esign_popup(esignWindow, doctype, docname);
 							}
-						})
-						.catch((e) => {
+						} catch (e) {
 							let details = "";
 							try {
 								// Try to extract frappe server messages if any
@@ -330,7 +332,8 @@ frappe.ui.form.PrintView = class {
 								message: __("Failed to upload to eSign service.") + (details ? "\n\n" + __("Details: {0}", [details]) : "\n\n" + __("Please check the browser console for more details.")),
 								indicator: "red"
 							});
-						});
+						}
+					})();
 				}
 			);
 			// place next to the PDF button if possible
