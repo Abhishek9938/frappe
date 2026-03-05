@@ -236,7 +236,7 @@ frappe.ui.form.PrintView = class {
 					const doctype = this.frm.doc.doctype;
 					const docname = this.frm.doc.name;
 					
-					async function esign_registration_jutemill() {
+					const esign_registration_jutemill = async()=> {
 						try {
 							const signer_name = await frappe.xcall("dev_jute_smart.api.esign.get_user_name");
 
