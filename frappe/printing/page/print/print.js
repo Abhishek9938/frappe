@@ -249,6 +249,9 @@ frappe.ui.form.PrintView = class {
 								settings: this.additional_settings || {},
 								auth_type: "OTP", // change if needed
 								signer_name: signer_name,
+								x_coordinate: 400.0,
+                                y_coordinate: 50.0,
+								page_number: "",
 							});
 
 							console.log("eSign API response:", r);
